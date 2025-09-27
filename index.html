@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Free MMO</title>
+  <style>
+    body { font-family: Arial; margin: 0; padding: 20px; background: #f5f5f5; }
+    #auth, #game { display: none; }
+    .form { max-width: 300px; margin: 50px auto; padding: 20px; background: white; border-radius: 8px; }
+    input { width: 100%; padding: 10px; margin: 8px 0; box-sizing: border-box; }
+    button { width: 100%; padding: 10px; background: #2196f3; color: white; border: none; cursor: pointer; }
+    #gameArea { width: 800px; height: 600px; background: #e0f7fa; position: relative; margin: 20px auto; border: 1px solid #999; }
+    .player { position: absolute; width: 30px; height: 30px; border-radius: 50%; text-align: center; line-height: 30px; font-size: 10px; color: white; }
+    .me { background: #f44336; }
+    .other { background: #2196f3; }
+  </style>
+</head>
+<body>
+  <div id="auth" class="form">
+    <h2>MMO Login</h2>
+    <input type="text" id="username" placeholder="Username (min 3 chars)">
+    <input type="password" id="password" placeholder="Password (min 6 chars)">
+    <button onclick="login()">Login</button>
+    <button onclick="register()">Register</button>
+    <p id="msg"></p>
+  </div>
+
+  <div id="game">
+    <h2>Free MMO - Use arrow keys to move</h2>
+    <div id="gameArea"></div>
+  </div>
+
+  <script>
+    let playerId = null;
+    let myX = 100, myY = 100;
+    const players = {};
+    let socket = null;
+    const keys = {};
+
+    function showMessage(text) {
+      document.getElementById('msg').innerText = text;
+    }
+
+    async function register() {
+      const u = document.getElementById('username').value;
+      const p = document.getElementById('password').value;
+      const res = await fetch('/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: u, password: p })
+      });
+      const data = await res.json();
+      showMessage(data.error || 'Registered! Login now.');
+    }
+
+    async function login() {
+      const u = document.getElementById('username').value;
+      const p = document.getElementById('password').value;
+      const res = await fetch('/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: u, password: p })
+      });
+      const data = await res.json();
+      if (data.success) {
+        playerId = data.user.id;
+        myX = data.user.x;
+        myY = data.user.y;
+        document.getElementById('auth').style.display = 'none';
+        document.getElementById('game').style.display = 'block';
+        connectWebSocket();
+      } else {
+        showMessage(data.error);
+      }
+    }
+
+    function connectWebSocket() {
+      socket = new WebSocket(`ws://${window.location.host}`);
+      socket.onopen = () => {
+        socket.send(JSON.stringify({ type: 'auth', token: playerId }));
+      };
+      socket.onmessage = (e) => {
+        const msg = JSON.parse(e.data);
+        if (msg.type === 'init') {
+          myX = msg.x;
+          myY = msg.y;
+          createOrUpdatePlayer(msg.playerId, msg.x, msg.y, true);
+        } else if (msg.type === 'playerJoined') {
+          createOrUpdatePlayer(msg.player.id, msg.player.x, msg.player.y, false);
+        } else if (msg.type === 'move') {
+          if (msg.id !== playerId) movePlayer(msg.id, msg.x, msg.y);
+        } else if (msg.type === 'playerLeft') {
+          removePlayer(msg.id);
+        }
+      };
+    }
+
+    function createOrUpdatePlayer(id, x, y, isMe) {
+      if (players[id]) {
+        players[id].div.style.left = x + 'px';
+        players[id].div.style.top = y + 'px';
+        return;
+      }
+      const div = document.createElement('div');
+      div.className = `player ${isMe ? 'me' : 'other'}`;
+      div.textContent = isMe ? 'ME' : 'P';
+      div.style.left = x + 'px';
+      div.style.top = y + 'px';
+      document.getElementById('gameArea').appendChild(div);
+      players[id] = { div, x, y };
+    }
+
+    function movePlayer(id, x, y) {
+      if (players[id]) {
+        players[id].div.style.left = x + 'px';
+        players[id].div.style.top = y + 'px';
+      }
+    }
+
+    function removePlayer(id) {
+      if (players[id]) {
+        players[id].div.remove();
+        delete players[id];
+      }
+    }
+
+    window.addEventListener('keydown', e => {
+      if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) {
+        keys[e.key] = true;
+        e.preventDefault();
+      }
+    });
+
+    window.addEventListener('keyup', e => {
+      if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) {
+        keys[e.key] = false;
+        e.preventDefault();
+      }
+    });
+
+    setInterval(() => {
+      if (!playerId || !socket || socket.readyState !== WebSocket.OPEN) return;
+      let moved = false;
+      const speed = 5;
+      if (keys['ArrowUp']) { myY -= speed; moved = true; }
+      if (keys['ArrowDown']) { myY += speed; moved = true; }
+      if (keys['ArrowLeft']) { myX -= speed; moved = true; }
+      if (keys['ArrowRight']) { myX += speed; moved = true; }
+      myX = Math.max(0, Math.min(770, myX));
+      myY = Math.max(0, Math.min(570, myY));
+      if (moved) {
+        socket.send(JSON.stringify({ type: 'move', x: myX, y: myY }));
+        movePlayer(playerId, myX, myY);
+      }
+    }, 1000 / 60);
+
+    document.getElementById('auth').style.display = 'block';
+  </script>
+</body>
+</html>

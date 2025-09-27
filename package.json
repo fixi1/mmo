@@ -1,0 +1,14 @@
+{
+  "name": "mmo-game",
+  "version": "1.0.0",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.16.0",
+    "bcryptjs": "^2.4.3",
+    "sqlite3": "^5.1.7",
+    "express": "^4.18.3"
+  }
+}
